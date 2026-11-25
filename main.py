@@ -22,7 +22,7 @@ EXPECTED_BYTES = 80
 EXPECTED_CHARS = 80
 
 
-def verify(text: str) -> None:
+def check_line(text: str) -> None:
     """Check the line against the sealed gate and the pinned hash."""
     if not (1 <= len(text) <= 200):
         raise SystemExit(f"gate fail: {len(text)} chars, need 1-200")
@@ -42,20 +42,36 @@ def verify(text: str) -> None:
         raise SystemExit(f"sha256 fail: got {digest}")
 
 
+def verify(path: str, data: bytes) -> bool:
+    """Read the written file back and fail hard unless it matches exactly.
+
+    Returns True only when the bytes on disk equal the intended bytes,
+    their sha256 matches the pinned hash, and their length matches the
+    pinned byte count.
+    """
+    with open(path, "rb") as f:
+        written = f.read()
+    if written != data:
+        raise SystemExit("read-back fail: file bytes differ from intended bytes")
+    if len(written) != EXPECTED_BYTES:
+        raise SystemExit(
+            f"read-back fail: got {len(written)} bytes, expected {EXPECTED_BYTES}"
+        )
+    if hashlib.sha256(written).hexdigest() != EXPECTED_SHA256:
+        raise SystemExit("read-back fail: written output hash mismatch")
+    return True
+
+
 def main() -> int:
-    verify(LINE)
+    check_line(LINE)
     out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, "entry.txt")
     with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(LINE)
-    with open(path, "rb") as f:
-        written = f.read()
-    if hashlib.sha256(written).hexdigest() != EXPECTED_SHA256:
-        raise SystemExit("written output hash mismatch")
-    if len(written) != EXPECTED_BYTES:
-        raise SystemExit("written output byte count mismatch")
-    print(f"wrote {path}: {len(written)} bytes, sha256 {EXPECTED_SHA256}")
+    if not verify(path, LINE.encode("utf-8")):
+        raise SystemExit("read-back verification failed")
+    print(f"wrote {path}: {EXPECTED_BYTES} bytes, sha256 {EXPECTED_SHA256}")
     return 0
 
 
